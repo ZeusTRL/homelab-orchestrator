@@ -1,5 +1,5 @@
 from typing import Optional, List, Dict
-from pysnmp.hlapi import (
+from pysnmp.hlapi.v3arch import (
     SnmpEngine, CommunityData, UdpTransportTarget, ContextData,
     ObjectType, ObjectIdentity, getCmd, nextCmd
 )
