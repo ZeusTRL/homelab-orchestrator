@@ -1,12 +1,13 @@
-from fastapi import APIRouter, Query, Depends
+from fastapi import APIRouter, Query, Depends, Body, HTTPException
 from sqlalchemy.orm import Session
+import asyncio
+
 from ..db import SessionLocal
 from ..services.scanner import run_nmap_scan
 from ..models.device import Device
-
+from ..models.service import Service
 
 router = APIRouter(prefix="/scan", tags=["scan"])
-
 
 def get_db():
     db = SessionLocal()
@@ -15,19 +16,43 @@ def get_db():
     finally:
         db.close()
 
+@router.api_route("/", methods=["GET", "POST"])
+async def scan(
+    targets: list[str] | None = Query(None, description="CIDRs or IPs; repeat param for multiple"),
+    body: dict | None = Body(None),
+    profile: str = Query("fast", enum=["fast", "standard", "deep"]),
+    db: Session = Depends(get_db),
+):
+    if not targets and body and isinstance(body.get("targets"), list):
+        targets = body["targets"]
+    if not targets:
+        raise HTTPException(status_code=400, detail='Provide ?targets=... or JSON body {"targets": [...]}')
 
-@router.post("/")
-async def scan(targets: list[str] = Query(..., description="CIDRs or IPs"), db: Session = Depends(get_db)):
-    results = run_nmap_scan(targets)
-    # upsert devices + services (minimal for MVP)
+    # Run blocking nmap in a worker thread so the event loop stays responsive
+    results = await asyncio.to_thread(run_nmap_scan, targets, profile)
+
+    # Upsert devices + replace services for that host
     for host, data in results.items():
         d = db.query(Device).filter(Device.mgmt_ip == host).first()
         if not d:
             d = Device(mgmt_ip=host)
             db.add(d)
-        d.hostname = data.get("hostname")
-        vend = data.get("vendor") or {}
-        d.vendor = next(iter(vend.values())) if isinstance(vend, dict) and vend else d.vendor
-        d.os = (data.get("osmatch") or [{}])[0].get("name") if data.get("osmatch") else d.os
+            db.flush()
+        d.hostname = data.get("hostname") or d.hostname
+        d.mac = data.get("mac") or d.mac
+        d.vendor = data.get("vendor") or d.vendor
+        d.os = data.get("os") or d.os
+
+        db.query(Service).filter(Service.device_id == d.id).delete(synchronize_session=False)
+        for s in data.get("services", []):
+            db.add(Service(
+                device_id=d.id,
+                port=s["port"],
+                proto=s["proto"],
+                name=s.get("name"),
+                product=s.get("product"),
+                version=s.get("version"),
+            ))
+
     db.commit()
-    return {"hosts": list(results.keys())}
+    return {"profile": profile, "hosts": list(results.keys())}
