@@ -1,8 +1,24 @@
 from typing import Optional, List, Dict
-from pysnmp.hlapi.v3arch import (
-    SnmpEngine, CommunityData, UdpTransportTarget, ContextData,
-    ObjectType, ObjectIdentity, getCmd, nextCmd
-)
+# --- SNMP imports (compatible with pysnmp 4.x/5.x/6.x) ---
+try:
+    # Some 6.x builds expose the old flat hlapi
+    from pysnmp.hlapi import (
+        SnmpEngine, CommunityData, UdpTransportTarget, ContextData,
+        ObjectType, ObjectIdentity, getCmd, nextCmd
+    )
+except ImportError:
+    try:
+        # Other 6.x builds expose v3arch.* layout
+        from pysnmp.hlapi.v3arch import (
+            SnmpEngine, CommunityData, UdpTransportTarget, ContextData,
+            ObjectType, ObjectIdentity, getCmd, nextCmd
+        )
+    except ImportError as e:
+        raise ImportError(
+            "Could not import pysnmp HLAPI. Ensure pysnmp is installed. "
+            "Tried 'pysnmp.hlapi' and 'pysnmp.hlapi.v3arch'."
+        ) from e
+
 
 # Common OIDs
 SYS_NAME   = ObjectIdentity('SNMPv2-MIB', 'sysName', 0)

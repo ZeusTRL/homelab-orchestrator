@@ -4,7 +4,7 @@ uvicorn==0.31.1
 
 # Database + ORM
 SQLAlchemy==2.0.36
-psycopg2-binary==2.9.9
+psycopg[binary]==3.2.3  # <-- new line, replaces psycopg2
 
 # Networking / SSH / Scanning
 paramiko==3.4.0
