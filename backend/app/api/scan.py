@@ -17,19 +17,7 @@ def get_db():
     finally:
         db.close()
 
-@router.api_route("/", methods=["GET", "POST"])
-async def scan(
-    targets: list[str] | None = Query(None, description="CIDRs or IPs; repeat param for multiple"),
-    body: dict | None = Body(None),
-    profile: str = Query("fast", enum=["fast", "standard", "deep"]),
-    skip_ping: bool = Query(False, description="Add -Pn; only use if ICMP is blocked"),
-    db: Session = Depends(get_db),
-):
-    if not targets and body and isinstance(body.get("targets"), list):
-        targets = body["targets"]
-    if not targets:
-        raise HTTPException(status_code=400, detail='Provide ?targets=... or JSON body {"targets": [...]}')
-
+async def _run_and_persist(targets: list[str], profile: str, skip_ping: bool, db: Session):
     results = await asyncio.to_thread(run_nmap_scan, targets, profile, skip_ping)
 
     for host, data in results.items():
@@ -53,6 +41,28 @@ async def scan(
                 product=s.get("product"),
                 version=s.get("version"),
             ))
-
     db.commit()
     return {"profile": profile, "skip_ping": skip_ping, "hosts": list(results.keys())}
+
+# -------- GET version: query params only (no body) --------
+@router.get("/")
+async def scan_get(
+    targets: list[str] = Query(..., description="CIDRs or IPs; repeat param for multiple"),
+    profile: str = Query("fast", enum=["fast", "standard", "deep"]),
+    skip_ping: bool = Query(False, description="Add -Pn; use if ICMP is blocked"),
+    db: Session = Depends(get_db),
+):
+    return await _run_and_persist(targets, profile, skip_ping, db)
+
+# -------- POST version: JSON body accepted --------
+@router.post("/")
+async def scan_post(
+    body: dict = Body(..., description='{"targets":["192.168.3.0/24", "..."]}'),
+    profile: str = Query("fast", enum=["fast", "standard", "deep"]),
+    skip_ping: bool = Query(False, description="Add -Pn; use if ICMP is blocked"),
+    db: Session = Depends(get_db),
+):
+    targets = body.get("targets")
+    if not targets or not isinstance(targets, list):
+        raise HTTPException(status_code=400, detail='Body must be {"targets":[...]}')
+    return await _run_and_persist(targets, profile, skip_ping, db)
