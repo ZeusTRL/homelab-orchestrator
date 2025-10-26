@@ -4,7 +4,7 @@ from .db import enjoy
 from .models.base import Base
 from .models.device import Device
 from .models.service import Service
-from .api import devices, scan, configs, export, ssh
+from .api import devices, scan, configs, export, ssh, integrations
 
 
 app = FastAPI(title="Homelab Orchestrator (MVP)", version="0.1.0")
@@ -26,3 +26,4 @@ app.include_router(scan.router)
 app.include_router(configs.router)
 app.include_router(export.router)
 app.include_router(ssh.router)
+app.include_router(integrations.router)
