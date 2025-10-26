@@ -5,6 +5,8 @@ services:
       POSTGRES_USER: homelab
       POSTGRES_PASSWORD: homelab
       POSTGRES_DB: homelab
+    ports:
+      - "5432:5432"
     volumes:
     - dbdata:/var/lib/postgresql/data
     networks: [hlab]
@@ -15,7 +17,7 @@ services:
     network_mode: host
     build: ./backend
     environment:
-      DATABASE_URL: postgresql+psycopg://homelab:homelab@db:5432/homelab
+      DATABASE_URL: postgresql+psycopg://homelab:homelab@192.168.3.235:5432/homelab
       SECRET_KEY: "change-me"
     volumes:
     - ./backend:/app
@@ -23,11 +25,16 @@ services:
     - export_store:/exports
     - ./infra/rclone:/rclone
     depends_on: [db]
-    networks: [hlab]
+    #networks: [hlab]
     #ports: ["8080:8080"]
     restart: unless-stopped
     command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
-
+  redis:
+    image: redis:7
+    container_name: homelab-orchestrator-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379" 
 
 volumes:
   dbdata:
@@ -35,5 +42,5 @@ volumes:
   export_store:
 
 
-networks:
-  hlab:
+#networks:
+ # hlab:

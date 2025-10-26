@@ -10,6 +10,8 @@ from .models.neighbor import Neighbor    # noqa: F401
 from .api import snmp
 from .api import services as services_api
 from .api import rules
+from .models.config_backup import ConfigBackup  # noqa: F401
+from .api import topology, configsync, jobs
 
 
 
@@ -38,3 +40,6 @@ app.include_router(integrations.router)
 app.include_router(snmp.router)
 app.include_router(services_api.router)
 app.include_router(rules.router)
+app.include_router(topology.router)
+app.include_router(configsync.router)
+app.include_router(jobs.router)
