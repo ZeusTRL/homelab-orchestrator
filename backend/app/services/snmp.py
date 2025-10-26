@@ -1,9 +1,8 @@
 # SNMP poller using puresnmp (Python 3.12 friendly)
-# We use numeric OIDs to avoid MIB dependency.
+# Use string OIDs; no MIBs required.
 
 from typing import Optional, List, Dict
-from puresnmp.api import v2c as snmp
-from puresnmp import oid as _oid
+from puresnmp import api as snmp  # <-- works across current puresnmp versions
 
 # OIDs
 SYS_DESCR = "1.3.6.1.2.1.1.1.0"   # sysDescr.0
@@ -22,9 +21,9 @@ LLDP_REM_PORTID  = "1.0.8802.1.1.2.1.4.1.1.7"  # lldpRemPortId
 def _safe_str(val) -> Optional[str]:
     if val is None:
         return None
+    if isinstance(val, bytes):
+        return val.decode(errors="ignore")
     try:
-        if isinstance(val, bytes):
-            return val.decode(errors="ignore")
         return str(val)
     except Exception:
         return None
@@ -32,8 +31,8 @@ def _safe_str(val) -> Optional[str]:
 
 def poll_sysinfo(host: str, community: str) -> dict:
     try:
-        descr = snmp.get(host, community, _oid.OID(SYS_DESCR))
-        name  = snmp.get(host, community, _oid.OID(SYS_NAME))
+        descr = snmp.get(host, community, SYS_DESCR)
+        name  = snmp.get(host, community, SYS_NAME)
         return {"sysDescr": _safe_str(descr), "sysName": _safe_str(name)}
     except Exception:
         return {}
@@ -42,8 +41,7 @@ def poll_sysinfo(host: str, community: str) -> dict:
 def _walk_map(host: str, community: str, base_oid: str) -> Dict[str, str]:
     """Walk an OID and return {index: value} where index is the last sub-id."""
     out: Dict[str, str] = {}
-    for oid, value in snmp.walk(host, community, _oid.OID(base_oid)):
-        # oid like 1.3.6.1....<index>
+    for oid, value in snmp.walk(host, community, base_oid):
         idx = str(oid).split(".")[-1]
         out[idx] = _safe_str(value)
     return out
@@ -76,7 +74,7 @@ def _walk_lldp(host: str, community: str, base_oid: str) -> Dict[str, str]:
     We key by the last 3 numbers joined with dots.
     """
     out: Dict[str, str] = {}
-    for oid, value in snmp.walk(host, community, _oid.OID(base_oid)):
+    for oid, value in snmp.walk(host, community, base_oid):
         inst = ".".join(str(oid).split(".")[-3:])
         out[inst] = _safe_str(value)
     return out
