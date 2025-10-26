@@ -19,12 +19,14 @@ class DeviceBase(BaseModel):
     os: Optional[str] = None
     os_version: Optional[str] = None
     notes: Optional[str] = None
-    # store extra attributes collected from scans, SNMP, etc.
-    metadata: Optional[dict[str, Any]] = Field(default=None, description="Arbitrary metadata bag")
+    # For request bodies we accept/return a field named "metadata"
+    metadata: Optional[dict[str, Any]] = None
+
 
 class DeviceCreate(DeviceBase):
-    # For manual creation we at least want an IP
+    # Minimal required field if creating manually
     mgmt_ip: str
+
 
 class DeviceUpdate(BaseModel):
     hostname: Optional[str] = None
@@ -38,8 +40,9 @@ class DeviceUpdate(BaseModel):
     notes: Optional[str] = None
     metadata: Optional[dict[str, Any]] = None
 
+
 class DeviceOut(BaseModel):
-    # read attributes from ORM objects & allow alias-based serialization
+    # Pydantic v2 config (no class Config!)
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     id: int
@@ -55,10 +58,12 @@ class DeviceOut(BaseModel):
     first_seen: Optional[datetime] = None
     last_seen: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True  # pydantic v2: allows ORM -> model
-        
-    metadata_: Optional[dict[str, Any]] = Field(default=None, alias="metadata")
+    # Read from ORM attribute `metadata_`, but serialize as "metadata"
+    metadata_: Optional[dict[str, Any]] = Field(
+        default=None,
+        serialization_alias="metadata",
+    )
+
 
 # ----------------------------
 # Juniper config generation
