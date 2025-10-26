@@ -1,129 +1,99 @@
+# SNMP poller using puresnmp (Python 3.12 friendly)
+# We use numeric OIDs to avoid MIB dependency.
+
 from typing import Optional, List, Dict
-# --- SNMP imports (compatible with pysnmp 4.x/5.x/6.x) ---
-try:
-    # Some 6.x builds expose the old flat hlapi
-    from pysnmp.hlapi import (
-        SnmpEngine, CommunityData, UdpTransportTarget, ContextData,
-        ObjectType, ObjectIdentity, getCmd, nextCmd
-    )
-except ImportError:
-    try:
-        # Other 6.x builds expose v3arch.* layout
-        from pysnmp.hlapi.v3arch import (
-            SnmpEngine, CommunityData, UdpTransportTarget, ContextData,
-            ObjectType, ObjectIdentity, getCmd, nextCmd
-        )
-    except ImportError as e:
-        raise ImportError(
-            "Could not import pysnmp HLAPI. Ensure pysnmp is installed. "
-            "Tried 'pysnmp.hlapi' and 'pysnmp.hlapi.v3arch'."
-        ) from e
+from puresnmp.api import v2c as snmp
+from puresnmp import oid as _oid
+
+# OIDs
+SYS_DESCR = "1.3.6.1.2.1.1.1.0"   # sysDescr.0
+SYS_NAME  = "1.3.6.1.2.1.1.5.0"   # sysName.0
+
+IF_DESCR  = "1.3.6.1.2.1.2.2.1.2" # ifDescr
+IF_ADMIN  = "1.3.6.1.2.1.2.2.1.7" # ifAdminStatus (1=up, 2=down)
+IF_OPER   = "1.3.6.1.2.1.2.2.1.8" # ifOperStatus  (1=up, 2=down)
+IF_SPEED  = "1.3.6.1.2.1.2.2.1.5" # ifSpeed (bps)
+
+# LLDP (802.1AB)
+LLDP_REM_SYSNAME = "1.0.8802.1.1.2.1.4.1.1.9"  # lldpRemSysName
+LLDP_REM_PORTID  = "1.0.8802.1.1.2.1.4.1.1.7"  # lldpRemPortId
 
 
-# Common OIDs
-SYS_NAME   = ObjectIdentity('SNMPv2-MIB', 'sysName', 0)
-SYS_DESCR  = ObjectIdentity('SNMPv2-MIB', 'sysDescr', 0)
-
-# IF-MIB
-IF_DESCR   = ObjectIdentity('IF-MIB', 'ifDescr')
-IF_ADMIN   = ObjectIdentity('IF-MIB', 'ifAdminStatus')
-IF_OPER    = ObjectIdentity('IF-MIB', 'ifOperStatus')
-IF_SPEED   = ObjectIdentity('IF-MIB', 'ifSpeed')
-
-# LLDP-MIB (neighbors)
-LLDP_REM_SYSNAME = ObjectIdentity('LLDP-MIB', 'lldpRemSysName')
-LLDP_REM_PORTID  = ObjectIdentity('LLDP-MIB', 'lldpRemPortId')
-LLDP_REM_ADDR    = ObjectIdentity('LLDP-MIB', 'lldpRemManAddrIfId')  # we’ll fetch addr via addr table below
-LLDP_REM_MANADDR = ObjectIdentity('LLDP-MIB', 'lldpRemManAddrIfSubtype')  # present = mgmt address table exists
-
-def _get(host, community, oid) -> Optional[str]:
-    engine = SnmpEngine()
-    errorIndication, errorStatus, errorIndex, varBinds = next(getCmd(
-        engine,
-        CommunityData(community, mpModel=1),  # SNMPv2
-        UdpTransportTarget((host, 161), timeout=1, retries=1),
-        ContextData(),
-        ObjectType(oid)
-    ))
-    if errorIndication or errorStatus:
+def _safe_str(val) -> Optional[str]:
+    if val is None:
         return None
-    return str(varBinds[0][1])
+    try:
+        if isinstance(val, bytes):
+            return val.decode(errors="ignore")
+        return str(val)
+    except Exception:
+        return None
 
-def _walk(host, community, oid_root) -> List[Dict]:
-    engine = SnmpEngine()
-    out = []
-    for (errorIndication, errorStatus, errorIndex, varBinds) in nextCmd(
-        engine,
-        CommunityData(community, mpModel=1),
-        UdpTransportTarget((host, 161), timeout=1, retries=1),
-        ContextData(),
-        ObjectType(oid_root),
-        lexicographicMode=False
-    ):
-        if errorIndication or errorStatus:
-            break
-        row = {}
-        for vb in varBinds:
-            row[str(vb[0])] = str(vb[1])
-        out.append(row)
-    return out
 
 def poll_sysinfo(host: str, community: str) -> dict:
-    return {
-        "sysName":  _get(host, community, SYS_NAME),
-        "sysDescr": _get(host, community, SYS_DESCR),
-    }
+    try:
+        descr = snmp.get(host, community, _oid.OID(SYS_DESCR))
+        name  = snmp.get(host, community, _oid.OID(SYS_NAME))
+        return {"sysDescr": _safe_str(descr), "sysName": _safe_str(name)}
+    except Exception:
+        return {}
 
-def poll_interfaces(host: str, community: str) -> list[dict]:
-    if_descr = _walk(host, community, IF_DESCR)
-    if_admin = _walk(host, community, IF_ADMIN)
-    if_oper  = _walk(host, community, IF_OPER)
-    if_speed = _walk(host, community, IF_SPEED)
 
-    # Build index → value maps
-    def idxmap(rows):  # rows like {'1.3.6...ifDescr.X': 'ge-0/0/1'}
-        m = {}
-        for r in rows:
-            for k, v in r.items():
-                idx = k.split('.')[-1]
-                m[idx] = v
-        return m
+def _walk_map(host: str, community: str, base_oid: str) -> Dict[str, str]:
+    """Walk an OID and return {index: value} where index is the last sub-id."""
+    out: Dict[str, str] = {}
+    for oid, value in snmp.walk(host, community, _oid.OID(base_oid)):
+        # oid like 1.3.6.1....<index>
+        idx = str(oid).split(".")[-1]
+        out[idx] = _safe_str(value)
+    return out
 
-    d = idxmap(if_descr); a = idxmap(if_admin); o = idxmap(if_oper); s = idxmap(if_speed)
+
+def poll_interfaces(host: str, community: str) -> List[dict]:
+    try:
+        d = _walk_map(host, community, IF_DESCR)
+        a = _walk_map(host, community, IF_ADMIN)
+        o = _walk_map(host, community, IF_OPER)
+        s = _walk_map(host, community, IF_SPEED)
+    except Exception:
+        return []
 
     out = []
     for idx, name in d.items():
         out.append({
             "index": idx,
             "name": name,
-            "admin_up": a.get(idx) == '1',
-            "oper_up":  o.get(idx) == '1',
-            "speed":    s.get(idx)
+            "admin_up": a.get(idx) == "1",
+            "oper_up":  o.get(idx) == "1",
+            "speed":    s.get(idx),
         })
     return out
 
-def poll_lldp_neighbors(host: str, community: str) -> list[dict]:
-    # Minimal LLDP: remote system name and port id tables
-    sysnames = _walk(host, community, LLDP_REM_SYSNAME)
-    ports    = _walk(host, community, LLDP_REM_PORTID)
 
-    # Flatten by instance suffix (last 3 indices typically: localPort, remIndex, remSubindex)
-    def parse(rows):
-        m = {}
-        for r in rows:
-            for k, v in r.items():
-                inst = '.'.join(k.split('.')[-3:])
-                m[inst] = v
-        return m
+def _walk_lldp(host: str, community: str, base_oid: str) -> Dict[str, str]:
+    """
+    LLDP indexes are typically: localPort.remIndex.remSubIndex (3 trailing numbers).
+    We key by the last 3 numbers joined with dots.
+    """
+    out: Dict[str, str] = {}
+    for oid, value in snmp.walk(host, community, _oid.OID(base_oid)):
+        inst = ".".join(str(oid).split(".")[-3:])
+        out[inst] = _safe_str(value)
+    return out
 
-    sn = parse(sysnames)
-    pt = parse(ports)
+
+def poll_lldp_neighbors(host: str, community: str) -> List[dict]:
+    try:
+        sysnames = _walk_lldp(host, community, LLDP_REM_SYSNAME)
+        ports    = _walk_lldp(host, community, LLDP_REM_PORTID)
+    except Exception:
+        return []
 
     out = []
-    for inst, rname in sn.items():
+    for inst, rname in sysnames.items():
         out.append({
             "instance": inst,
             "remote_sysname": rname,
-            "remote_port": pt.get(inst)
+            "remote_port": ports.get(inst),
         })
     return out
