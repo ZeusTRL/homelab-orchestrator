@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Homelab Topology</title>
+  <script src="https://unpkg.com/cytoscape@3.30.3/dist/cytoscape.min.js"></script>
+  <style>
+    html, body { height: 100%; margin: 0; background: #0d1117; color: #eee; font-family: sans-serif; }
+    #cy { width: 100%; height: 100%; display: block; }
+    #legend {
+      position: fixed; top: 10px; left: 10px; background: #1b1f24; padding: 8px 12px;
+      border-radius: 8px; box-shadow: 0 0 6px rgba(0,0,0,0.4);
+      font-size: 14px; opacity: 0.9;
+    }
+  </style>
+</head>
+<body>
+  <div id="legend">Loading topology...</div>
+  <div id="cy"></div>
+
+  <script>
+    async function fetchTopology() {
+      const baseUrl = window.location.origin; // assumes same host/port as backend
+      const res = await fetch(`${baseUrl}/topology`);
+      if (!res.ok) throw new Error("Failed to load topology");
+      return await res.json();
+    }
+
+    function renderTopology(data) {
+      const nodes = data.nodes.map(n => ({
+        data: { id: n.id.toString(), label: n.label || n.ip, vendor: n.vendor || 'unknown', ip: n.ip }
+      }));
+
+      const edges = data.edges.map(e => ({
+        data: { source: e.source.toString(), target: e.target.toString(), label: e.local_if || e.remote_port || '' }
+      }));
+
+      const cy = cytoscape({
+        container: document.getElementById('cy'),
+        elements: { nodes, edges },
+        layout: { name: 'cose', animate: false },
+        style: [
+          {
+            selector: 'node',
+            style: {
+              'background-color': ele => ele.data('vendor').toLowerCase().includes('juniper') ? '#0099ff' :
+                                       ele.data('vendor').toLowerCase().includes('pfsense') ? '#ff5050' : '#aaaaaa',
+              'label': 'data(label)',
+              'color': '#fff',
+              'text-valign': 'center',
+              'text-outline-color': '#222',
+              'text-outline-width': 2,
+              'font-size': '10px'
+            }
+          },
+          {
+            selector: 'edge',
+            style: {
+              'width': 2,
+              'line-color': '#888',
+              'target-arrow-color': '#888',
+              'curve-style': 'bezier',
+              'label': 'data(label)',
+              'font-size': '8px',
+              'color': '#ccc',
+              'text-background-opacity': 1,
+              'text-background-color': '#0d1117'
+            }
+          },
+          { selector: ':selected', style: { 'border-width': 3, 'border-color': '#ffcc00' } }
+        ]
+      });
+
+      cy.on('tap', 'node', evt => {
+        const d = evt.target.data();
+        alert(`Device: ${d.label}\nVendor: ${d.vendor}\nIP: ${d.ip}`);
+      });
+
+      document.getElementById('legend').innerText = `Topology loaded: ${nodes.length} devices, ${edges.length} links`;
+    }
+
+    fetchTopology()
+      .then(renderTopology)
+      .catch(err => {
+        document.getElementById('legend').innerText = 'Failed to load topology: ' + err;
+      });
+  </script>
+</body>
+</html>

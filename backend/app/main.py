@@ -12,6 +12,7 @@ from .api import services as services_api
 from .api import rules
 from .models.config_backup import ConfigBackup  # noqa: F401
 from .api import topology, configsync, jobs
+from fastapi.staticfiles import StaticFiles
 
 
 
@@ -43,3 +44,4 @@ app.include_router(rules.router)
 app.include_router(topology.router)
 app.include_router(configsync.router)
 app.include_router(jobs.router)
+app.mount("/static", StaticFiles(directory="static"), name="static")
