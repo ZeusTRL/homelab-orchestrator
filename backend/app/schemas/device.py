@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Optional, Any, List
 from datetime import datetime
 from pydantic import BaseModel, Field
+from pydantic.config import ConfigDict
 
 
 # ----------------------------
@@ -38,6 +39,9 @@ class DeviceUpdate(BaseModel):
     metadata: Optional[dict[str, Any]] = None
 
 class DeviceOut(BaseModel):
+    # read attributes from ORM objects & allow alias-based serialization
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
     id: int
     hostname: Optional[str] = None
     mgmt_ip: Optional[str] = None
@@ -48,14 +52,13 @@ class DeviceOut(BaseModel):
     os: Optional[str] = None
     os_version: Optional[str] = None
     notes: Optional[str] = None
-    # expose DB column `metadata_` as `metadata` in API responses
-    metadata: Optional[dict[str, Any]] = Field(default=None, serialization_alias="metadata")
     first_seen: Optional[datetime] = None
     last_seen: Optional[datetime] = None
 
     class Config:
         from_attributes = True  # pydantic v2: allows ORM -> model
-
+        
+    metadata_: Optional[dict[str, Any]] = Field(default=None, alias="metadata")
 
 # ----------------------------
 # Juniper config generation
