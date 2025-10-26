@@ -19,4 +19,4 @@ class Device(Base):
     notes = Column(String)
     first_seen = Column(DateTime, default=datetime.utcnow)
     last_seen = Column(DateTime, default=datetime.utcnow)
-    metadata = Column(JSON, default=dict)
+    metadata_ = Column("metadata", JSON, default=dict)
