@@ -2,22 +2,25 @@ import nmap
 from typing import Dict, List
 
 PROFILES: Dict[str, str] = {
-    # Fast inventory + top ports, version-light, no UDP/OS
-    "fast":     "-T4 -Pn -sS -F -sV --version-light --host-timeout 10s --max-retries 1",
-    # Balanced TCP scan with service detection
-    "standard": "-T3 -Pn -sS -sV --host-timeout 20s --max-retries 2",
-    # Deep scan (what we had before): TCP+UDP+OS
-    "deep":     "-T3 -Pn -sS -sU -sV -O --host-timeout 45s --max-retries 1",
+    "fast":     "-T4 -sS -F -sV --version-light --host-timeout 10s --max-retries 1",
+    "standard": "-T3 -sS -sV --host-timeout 20s --max-retries 2",
+    "deep":     "-T3 -sS -sU -sV -O --host-timeout 45s --max-retries 1",
 }
 
-def run_nmap_scan(targets: List[str], profile: str = "fast") -> dict:
-    args = PROFILES.get(profile, PROFILES["fast"])
+def run_nmap_scan(targets: List[str], profile: str = "fast", skip_ping: bool = False) -> dict:
+    base_args = PROFILES.get(profile, PROFILES["fast"])
+    if skip_ping:
+        base_args = f"{base_args} -Pn"
+
     nm = nmap.PortScanner()
-    nm.scan(hosts=",".join(targets), arguments=args)
+    nm.scan(hosts=",".join(targets), arguments=base_args)
 
     results = {}
     for host in nm.all_hosts():
         h = nm[host]
+        if (h.state() or "").lower() != "up":
+            continue  # ← filter out non-up targets
+
         hostname = h.hostname() or None
         mac = (h.get("addresses") or {}).get("mac")
         vendor = None

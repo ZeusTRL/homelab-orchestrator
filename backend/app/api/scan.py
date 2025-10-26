@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Query, Depends, Body, HTTPException
 from sqlalchemy.orm import Session
 import asyncio
+from datetime import datetime
 
 from ..db import SessionLocal
 from ..services.scanner import run_nmap_scan
@@ -21,6 +22,7 @@ async def scan(
     targets: list[str] | None = Query(None, description="CIDRs or IPs; repeat param for multiple"),
     body: dict | None = Body(None),
     profile: str = Query("fast", enum=["fast", "standard", "deep"]),
+    skip_ping: bool = Query(False, description="Add -Pn; only use if ICMP is blocked"),
     db: Session = Depends(get_db),
 ):
     if not targets and body and isinstance(body.get("targets"), list):
@@ -28,20 +30,18 @@ async def scan(
     if not targets:
         raise HTTPException(status_code=400, detail='Provide ?targets=... or JSON body {"targets": [...]}')
 
-    # Run blocking nmap in a worker thread so the event loop stays responsive
-    results = await asyncio.to_thread(run_nmap_scan, targets, profile)
+    results = await asyncio.to_thread(run_nmap_scan, targets, profile, skip_ping)
 
-    # Upsert devices + replace services for that host
     for host, data in results.items():
         d = db.query(Device).filter(Device.mgmt_ip == host).first()
         if not d:
-            d = Device(mgmt_ip=host)
-            db.add(d)
-            db.flush()
+            d = Device(mgmt_ip=host, first_seen=datetime.utcnow())
+            db.add(d); db.flush()
         d.hostname = data.get("hostname") or d.hostname
         d.mac = data.get("mac") or d.mac
         d.vendor = data.get("vendor") or d.vendor
         d.os = data.get("os") or d.os
+        d.last_seen = datetime.utcnow()
 
         db.query(Service).filter(Service.device_id == d.id).delete(synchronize_session=False)
         for s in data.get("services", []):
@@ -55,4 +55,4 @@ async def scan(
             ))
 
     db.commit()
-    return {"profile": profile, "hosts": list(results.keys())}
+    return {"profile": profile, "skip_ping": skip_ping, "hosts": list(results.keys())}
