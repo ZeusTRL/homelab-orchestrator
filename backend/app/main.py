@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from sqlalchemy import text
 from .db import enjoy
-from models.base import Base
+from .models.base import Base
 from .models.device import Device
 from .models.service import Service
 from .api import devices, scan, configs, export, ssh
