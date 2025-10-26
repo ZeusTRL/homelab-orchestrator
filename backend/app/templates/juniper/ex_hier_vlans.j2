@@ -1,0 +1,24 @@
+system {
+host-name {{ hostname }};
+services { ssh; }
+management-instance;
+}
+interfaces {
+me0 { unit 0 { family inet { address {{ mgmt_ip }}; } } }
+{{ uplink_if }} { unit 0 { family ethernet-switching { port-mode trunk; } } }
+{% for t in trunk_ifs %}
+{{ t }} { unit 0 { family ethernet-switching { port-mode trunk; } } }
+{% endfor %}
+{% for ap in access_ports %}
+{{ ap.if }} { unit 0 { family ethernet-switching { port-mode access; vlan { members {{ ap.vlan }}; } } } }
+{% endfor %}
+irb { {% for v in vlans if v.get('gateway') %}
+unit {{ v.vid }} { family inet { address {{ v.gateway }}; } }
+{% endfor %} }
+}
+vlans {
+{% for v in vlans %}
+{{ v.name | replace(' ', '_') }} { vlan-id {{ v.vid }}; {% if v.get('gateway') %} l3-interface irb.{{ v.vid }}; {% endif %} }
+{% endfor %}
+}
+protocols { lldp { interface all; } }

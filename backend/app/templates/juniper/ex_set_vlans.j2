@@ -1,0 +1,31 @@
+set system host-name {{ hostname }}
+set system services ssh
+set system management-instance
+set interfaces me0 unit 0 family inet address {{ mgmt_ip }}
+
+
+{# Uplink and trunks #}
+set interfaces {{ uplink_if }} unit 0 family ethernet-switching port-mode trunk
+{% for t in trunk_ifs %}
+set interfaces {{ t }} unit 0 family ethernet-switching port-mode trunk
+{% endfor %}
+
+
+{# VLANs and L3 gateways (IRB) #}
+{% for v in vlans %}
+set vlans {{ v.name | replace(' ', '_') }} vlan-id {{ v.vid }}
+{% if v.get('gateway') %}
+set interfaces irb unit {{ v.vid }} family inet address {{ v.gateway }}
+set vlans {{ v.name | replace(' ', '_') }} l3-interface irb.{{ v.vid }}
+{% endif %}
+{% endfor %}
+
+
+{# Access ports #}
+{% for ap in access_ports %}
+set interfaces {{ ap.if }} unit 0 family ethernet-switching port-mode access
+set interfaces {{ ap.if }} unit 0 family ethernet-switching vlan members {{ ap.vlan }}
+{% endfor %}
+
+
+set protocols lldp interface all
