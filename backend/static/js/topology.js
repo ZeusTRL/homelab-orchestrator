@@ -1,15 +1,22 @@
 /* global cytoscape */
 (function(){
-  // Register plugins ONLY if they’re functions (prevents undefined.apply errors)
-  if (typeof window.cytoscapePanzoom === 'function') {
-    try { cytoscape.use(window.cytoscapePanzoom); } catch (e) {}
-  }
-  if (typeof window.cytoscapeMinimap === 'function') {
-    try { cytoscape.use(window.cytoscapeMinimap); } catch (e) {}
-  }
+  // --- SAFE PLUGIN REGISTRATION (handles UMD default too) ---
+  const panzoomPlugin = (window.cytoscapePanzoom && typeof window.cytoscapePanzoom === 'function')
+    ? window.cytoscapePanzoom
+    : (window.cytoscapePanzoom && window.cytoscapePanzoom.default && typeof window.cytoscapePanzoom.default === 'function')
+      ? window.cytoscapePanzoom.default
+      : null;
 
+  const minimapPlugin = (window.cytoscapeMinimap && typeof window.cytoscapeMinimap === 'function')
+    ? window.cytoscapeMinimap
+    : (window.cytoscapeMinimap && window.cytoscapeMinimap.default && typeof window.cytoscapeMinimap.default === 'function')
+      ? window.cytoscapeMinimap.default
+      : null;
 
-  const { getJSON, postJSON, openTopologySocket, API_BASE } = window.AppHelpers;
+  try { if (panzoomPlugin) cytoscape.use(panzoomPlugin); } catch {}
+  try { if (minimapPlugin) cytoscape.use(minimapPlugin); } catch {}
+
+  const { getJSON, postJSON, openTopologySocket } = window.AppHelpers;
 
   const ICONS = {
     juniper: '/static/icons/juniper.png',
@@ -19,18 +26,12 @@
     unknown: '/static/icons/unknown.png'
   };
 
-  const debounce = (fn, ms = 600) => {
-    let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
-  };
-
-  function vendorKey(vendor) {
-    const v = (vendor || '').toLowerCase();
-    if (v.includes('juniper')) return 'juniper';
-    if (v.includes('pfsense')) return 'pfsense';
-    if (v.includes('switch')) return 'switch';
-    if (v.includes('server')) return 'server';
-    return 'unknown';
-  }
+  const debounce = (fn, ms = 600) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+  const vkey = v => (v||'').toLowerCase().includes('juniper') ? 'juniper'
+               : (v||'').toLowerCase().includes('pfsense') ? 'pfsense'
+               : (v||'').toLowerCase().includes('switch')  ? 'switch'
+               : (v||'').toLowerCase().includes('server')  ? 'server'
+               : 'unknown';
 
   async function fetchTopology() { return getJSON('/topology'); }
   async function fetchLayout()   { return getJSON('/topology/layout'); }
@@ -43,19 +44,18 @@
     })) };
   }
 
-function applySavedPositions(cy, map) {
-  const pts = map.points || {};
-  let applied = 0;
-  Object.entries(pts).forEach(([id, pos]) => {
-    const node = cy.$id(String(id));
-    if (node.length > 0) {
-      node.position({ x: pos.x, y: pos.y });
-      applied++;
+  function applySavedPositions(cy, map) {
+    const pts = (map && map.points) || {};
+    let applied = 0;
+    for (const [id, pos] of Object.entries(pts)) {
+      const node = cy.$id(String(id));
+      if (node.length > 0 && pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
+        node.position({ x: pos.x, y: pos.y });
+        applied++;
+      }
     }
-  });
-  return applied;
-}
-
+    return applied;
+  }
 
   function makeSidebar() {
     const side = document.createElement('aside');
@@ -65,8 +65,8 @@ function applySavedPositions(cy, map) {
       <div class="muted">Click a node to view device info.</div>
       <div class="kv" id="kv"></div>
       <div class="buttonbar">
-        <button id="lockBtn" class="">Lock</button>
-        <button id="unlockBtn" class="">Unlock</button>
+        <button id="lockBtn">Lock</button>
+        <button id="unlockBtn">Unlock</button>
         <button id="saveBtn" class="primary">Save Positions</button>
       </div>
       <div><span class="badge" id="statusBadge">Idle</span></div>
@@ -81,8 +81,8 @@ function applySavedPositions(cy, map) {
     return root;
   }
 
-  function setKV(kvEl, entries) {
-    kvEl.innerHTML = entries.map(([k,v]) => `<div class="k">${k}</div><div>${v ?? ''}</div>`).join('');
+  function setKV(el, entries) {
+    el.innerHTML = entries.map(([k,v]) => `<div class="k">${k}</div><div>${v ?? ''}</div>`).join('');
   }
 
   function buildTopologyView() {
@@ -91,11 +91,11 @@ function applySavedPositions(cy, map) {
 
     const root = makeRoot();
     const side = makeSidebar();
-
     container.appendChild(root);
     container.appendChild(side);
 
     (async () => {
+      const legend = document.getElementById('legend');
       const topo = await fetchTopology();
       const layoutMap = await fetchLayout();
 
@@ -105,7 +105,7 @@ function applySavedPositions(cy, map) {
           label: n.label || n.ip,
           vendor: n.vendor || 'unknown',
           ip: n.ip,
-          icon: ICONS[vendorKey(n.vendor)]
+          icon: ICONS[vkey(n.vendor)]
         }
       }));
       const edges = topo.edges.map(e => ({
@@ -119,12 +119,12 @@ function applySavedPositions(cy, map) {
       const cy = cytoscape({
         container: document.getElementById('cy'),
         elements: { nodes, edges },
-        layout: { name: 'preset' }, // use saved positions if present
+        layout: { name: 'preset' },
         style: [
           {
             selector: 'node',
             style: {
-              'background-color': '#888',           // fallback if no image
+              'background-color': '#888',
               'background-image': 'data(icon)',
               'background-fit': 'cover',
               'shape': 'round-rectangle',
@@ -151,17 +151,16 @@ function applySavedPositions(cy, map) {
         ]
       });
 
-      // Minimap & panzoom
-      cy.minimap({ position: 'right-bottom', width: 200, height: 120 });
-      cy.panzoom({ });
+      // Init extras (only if plugin actually registered)
+      try { if (typeof cy.minimap === 'function') cy.minimap({ position: 'right-bottom', width: 200, height: 120 }); } catch {}
+      try { if (typeof cy.panzoom === 'function') cy.panzoom({}); } catch {}
 
-      // Apply saved positions
+      // Apply positions or run initial layout
       const applied = applySavedPositions(cy, layoutMap);
       if (applied === 0) cy.layout({ name: 'cose', animate: false }).run();
-      const legend = document.getElementById('legend');
       legend.textContent = `Loaded ${nodes.length} devices, ${edges.length} links • restored ${applied} positions`;
 
-      // Sidebar interactions
+      // Sidebar controls
       const kvEl = side.querySelector('#kv');
       const status = side.querySelector('#statusBadge');
       const lockBtn = side.querySelector('#lockBtn');
@@ -170,57 +169,48 @@ function applySavedPositions(cy, map) {
 
       let editing = false;
       cy.autoungrabify(!editing);
-
       lockBtn.onclick = () => { editing = false; cy.autoungrabify(true); status.textContent = 'Locked'; };
       unlockBtn.onclick = () => { editing = true; cy.autoungrabify(false); status.textContent = 'Unlocked (drag to move)'; };
-      saveBtn.onclick = async () => {
-        status.textContent = 'Saving...';
-        await postJSON('/topology/layout', collectPositions(cy));
-        status.textContent = 'Saved ✔';
-      };
 
-      // Click a node → details in side panel
-      cy.on('tap', 'node', (evt) => {
-        const d = evt.target.data();
-        setKV(kvEl, [
-          ['Label', d.label],
-          ['Vendor', d.vendor || 'unknown'],
-          ['IP', d.ip || ''],
-          ['ID', evt.target.id()],
-        ]);
-      });
+      async function saveNow() {
+        try {
+          status.textContent = 'Saving...';
+          await postJSON('/topology/layout', collectPositions(cy));
+          status.textContent = 'Saved ✔';
+        } catch (e) {
+          status.textContent = 'Save failed ✖';
+          console.error('Save positions failed:', e);
+        }
+      }
+      saveBtn.onclick = saveNow;
 
-      // Auto-save on drag end (if unlocked)
-      const debouncedSave = debounce(async () => {
-        status.textContent = 'Saving...';
-        await postJSON('/topology/layout', collectPositions(cy));
-        status.textContent = 'Saved ✔';
-      }, 750);
-
+      const debouncedSave = debounce(saveNow, 750);
       cy.on('dragfree', 'node', () => { if (editing) debouncedSave(); });
 
-      // Optional live updates: refetch on WS message
+      // Live updates (optional)
       openTopologySocket(async (msg) => {
         if (msg?.event === 'update_topology') {
           legend.textContent = 'Updating topology...';
           const newTopo = await fetchTopology();
-          // Naive refresh: rebuild elements (fine for now)
           cy.elements().remove();
           cy.add({
-            nodes: newTopo.nodes.map(n => ({
-              data: { id: String(n.id), label: n.label || n.ip, vendor: n.vendor || 'unknown', ip: n.ip, icon: ICONS[vendorKey(n.vendor)] }
-            })),
-            edges: newTopo.edges.map(e => ({
-              data: { source: String(e.source), target: String(e.target), label: e.local_if || e.remote_port || '' }
-            }))
+            nodes: newTopo.nodes.map(n => ({ data: { id: String(n.id), label: n.label || n.ip, vendor: n.vendor || 'unknown', ip: n.ip, icon: ICONS[vkey(n.vendor)] } })),
+            edges: newTopo.edges.map(e => ({ data: { source: String(e.source), target: String(e.target), label: e.local_if || e.remote_port || '' } }))
           });
           applySavedPositions(cy, await fetchLayout());
           legend.textContent = 'Topology updated';
         }
       });
+
+      // Click node → info
+      cy.on('tap', 'node', (evt) => {
+        const d = evt.target.data();
+        setKV(kvEl, [['Label', d.label], ['Vendor', d.vendor||'unknown'], ['IP', d.ip||''], ['ID', evt.target.id()]]);
+      });
     })().catch(err => {
       const legend = document.getElementById('legend');
       if (legend) legend.textContent = 'Failed to load: ' + err.message;
+      console.error(err);
     });
 
     return container;
