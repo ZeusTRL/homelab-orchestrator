@@ -1,6 +1,6 @@
 /* global cytoscape */
 (function(){
-  // --- SAFE PLUGIN REGISTRATION (handles UMD default too) ---
+  // ---------- SAFE PLUGIN REGISTRATION ----------
   const panzoomPlugin =
     (window.cytoscapePanzoom && typeof window.cytoscapePanzoom === 'function')
       ? window.cytoscapePanzoom
@@ -20,7 +20,11 @@
 
   const { getJSON, postJSON, openTopologySocket } = window.AppHelpers;
 
-  // --- ICON MAP ---
+  // ---------- CONFIG ----------
+  // If you add PNGs under /static/icons/, set this to true to show vendor images.
+  const USE_ICONS = false;
+
+  // Map vendor->icon path (only used when USE_ICONS=true and files exist)
   const ICONS = {
     juniper: '/static/icons/juniper.png',
     pfsense: '/static/icons/pfsense.png',
@@ -29,13 +33,23 @@
     unknown: '/static/icons/unknown.png'
   };
 
-  // --- UTILS ---
+  // ---------- UTILS ----------
   const debounce = (fn, ms = 600) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
   const vkey = v => (v||'').toLowerCase().includes('juniper') ? 'juniper'
                : (v||'').toLowerCase().includes('pfsense') ? 'pfsense'
                : (v||'').toLowerCase().includes('switch')  ? 'switch'
                : (v||'').toLowerCase().includes('server')  ? 'server'
                : 'unknown';
+
+  const setStatus = (txt) => {
+    const el = document.getElementById('statusBadge');
+    if (el) el.textContent = txt;
+  };
+
+  const setLegend = (txt) => {
+    const el = document.getElementById('legend');
+    if (el) el.textContent = txt;
+  };
 
   async function fetchTopology() { return getJSON('/topology'); }
   async function fetchLayout()   { return getJSON('/topology/layout'); }
@@ -64,7 +78,7 @@
     return applied;
   }
 
-  // --- UI BUILDERS ---
+  // ---------- UI BUILDERS ----------
   function makeSidebar() {
     const side = document.createElement('aside');
     side.className = 'sidebar';
@@ -93,18 +107,19 @@
     el.innerHTML = entries.map(([k,v]) => `<div class="k">${k}</div><div>${v ?? ''}</div>`).join('');
   }
 
-  // --- MAIN VIEW BUILDER ---
+  // ---------- MAIN VIEW ----------
   function buildTopologyView() {
     const container = document.createElement('div');
     container.style.display = 'contents';
 
+    // Create & attach DOM *before* any async work
     const root = makeRoot();
     const side = makeSidebar();
     container.appendChild(root);
     container.appendChild(side);
 
     (async () => {
-      const legend = document.getElementById('legend');
+      setLegend('Loading topology...');
       const topo = await fetchTopology();
       const layoutMap = await fetchLayout();
 
@@ -114,7 +129,7 @@
           label: n.label || n.ip,
           vendor: n.vendor || 'unknown',
           ip: n.ip,
-          icon: ICONS[vkey(n.vendor)]
+          icon: USE_ICONS ? (ICONS[vkey(n.vendor)] || ICONS.unknown) : null
         }
       }));
       const edges = topo.edges.map(e => ({
@@ -125,29 +140,37 @@
         }
       }));
 
+      const baseNodeStyle = {
+        'shape': 'round-rectangle',
+        'border-width': 2,
+        'border-color': '#2f3a4a',
+        'label': 'data(label)',
+        'color': '#fff',
+        'font-size': '11px',
+        'text-valign': 'center',
+        'text-outline-color': '#111',
+        'text-outline-width': 2,
+        'width': 64, 'height': 36
+      };
+
+      const nodeStyleWithImage = {
+        ...baseNodeStyle,
+        'background-color': '#888',
+        'background-image': 'data(icon)',
+        'background-fit': 'cover',
+      };
+
+      const nodeStyleNoImage = {
+        ...baseNodeStyle,
+        'background-color': '#64748b',
+      };
+
       const cy = cytoscape({
         container: document.getElementById('cy'),
         elements: { nodes, edges },
         layout: { name: 'preset' },
         style: [
-          {
-            selector: 'node',
-            style: {
-              'background-color': '#888',
-              'background-image': 'data(icon)',
-              'background-fit': 'cover',
-              'shape': 'round-rectangle',
-              'border-width': 2,
-              'border-color': '#2f3a4a',
-              'label': 'data(label)',
-              'color': '#fff',
-              'font-size': '11px',
-              'text-valign': 'center',
-              'text-outline-color': '#111',
-              'text-outline-width': 2,
-              'width': 64, 'height': 36
-            }
-          },
+          { selector: 'node', style: USE_ICONS ? nodeStyleWithImage : nodeStyleNoImage },
           {
             selector: 'edge',
             style: {
@@ -165,20 +188,20 @@
         ]
       });
 
-      // Init extras (only if plugin actually registered)
+      // Optional extras (only if plugin registered)
       try { if (typeof cy.minimap === 'function') cy.minimap({ position: 'right-bottom', width: 200, height: 120 }); } catch {}
       try { if (typeof cy.panzoom === 'function') cy.panzoom({}); } catch {}
 
-      // Apply positions or run initial layout
+      // Apply positions or run layout
       const applied = applySavedPositions(cy, layoutMap);
       if (applied === 0) cy.layout({ name: 'cose', animate: false }).run();
-      legend.textContent = `Loaded ${nodes.length} devices, ${edges.length} links • restored ${applied} positions`;
+      setLegend(`Loaded ${nodes.length} devices, ${edges.length} links • restored ${applied} positions`);
 
       // Sidebar controls
-      const kvEl = side.querySelector('#kv');
-      const lockBtn = side.querySelector('#lockBtn');
-      const unlockBtn = side.querySelector('#unlockBtn');
-      const saveBtn = side.querySelector('#saveBtn');
+      const kvEl     = side.querySelector('#kv');
+      const lockBtn  = side.querySelector('#lockBtn');
+      const unlockBtn= side.querySelector('#unlockBtn');
+      const saveBtn  = side.querySelector('#saveBtn');
 
       let editing = false;
       cy.autoungrabify(!editing);
@@ -186,30 +209,25 @@
       lockBtn.addEventListener('click', () => {
         editing = false;
         cy.autoungrabify(true);
-        const el = document.getElementById('statusBadge');
-        if (el) el.textContent = 'Locked';
+        setStatus('Locked');
       });
-
       unlockBtn.addEventListener('click', () => {
         editing = true;
         cy.autoungrabify(false);
-        const el = document.getElementById('statusBadge');
-        if (el) el.textContent = 'Unlocked (drag to move)';
+        setStatus('Unlocked (drag to move)');
       });
 
       async function saveNow() {
         try {
           const body = collectPositions(cy);
           console.log('[Topology] saveNow ->', body);
-          const statusEl = document.getElementById('statusBadge');
-          if (statusEl) statusEl.textContent = 'Saving...';
+          setStatus('Saving...');
           const res = await postJSON('/topology/layout', body);
           console.log('[Topology] saveNow response ->', res);
-          if (statusEl) statusEl.textContent = 'Saved ✔';
+          setStatus('Saved ✔');
         } catch (e) {
           console.error('[Topology] saveNow error:', e);
-          const statusEl = document.getElementById('statusBadge');
-          if (statusEl) statusEl.textContent = 'Save failed ✖';
+          setStatus('Save failed ✖');
         }
       }
 
@@ -241,7 +259,7 @@
       // Optional live updates (future websocket)
       openTopologySocket(async (msg) => {
         if (msg?.event === 'update_topology') {
-          legend.textContent = 'Updating topology...';
+          setLegend('Updating topology...');
           const newTopo = await fetchTopology();
           cy.elements().remove();
           cy.add({
@@ -251,24 +269,20 @@
                 label: n.label || n.ip,
                 vendor: n.vendor || 'unknown',
                 ip: n.ip,
-                icon: ICONS[vkey(n.vendor)]
+                icon: USE_ICONS ? (ICONS[vkey(n.vendor)] || ICONS.unknown) : null
               }
             })),
             edges: newTopo.edges.map(e => ({
-              data: {
-                source: String(e.source),
-                target: String(e.target),
-                label: e.local_if || e.remote_port || ''
-              }
+              data: { source: String(e.source), target: String(e.target), label: e.local_if || e.remote_port || '' }
             }))
           });
           applySavedPositions(cy, await fetchLayout());
-          legend.textContent = 'Topology updated';
+          setLegend('Topology updated');
         }
       });
+
     })().catch(err => {
-      const legend = document.getElementById('legend');
-      if (legend) legend.textContent = 'Failed to load: ' + err.message;
+      setLegend('Failed to load: ' + err.message);
       console.error(err);
     });
 
