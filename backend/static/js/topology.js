@@ -20,7 +20,7 @@
 
   const { getJSON, postJSON, openTopologySocket } = window.AppHelpers;
 
-  // --- ICON MAP (add files under /static/icons if you want custom images) ---
+  // --- ICON MAP ---
   const ICONS = {
     juniper: '/static/icons/juniper.png',
     pfsense: '/static/icons/pfsense.png',
@@ -128,7 +128,7 @@
       const cy = cytoscape({
         container: document.getElementById('cy'),
         elements: { nodes, edges },
-        layout: { name: 'preset' }, // saved coords will be applied below
+        layout: { name: 'preset' },
         style: [
           {
             selector: 'node',
@@ -176,7 +176,6 @@
 
       // Sidebar controls
       const kvEl = side.querySelector('#kv');
-      const status = side.querySelector('#statusBadge');
       const lockBtn = side.querySelector('#lockBtn');
       const unlockBtn = side.querySelector('#unlockBtn');
       const saveBtn = side.querySelector('#saveBtn');
@@ -185,33 +184,36 @@
       cy.autoungrabify(!editing);
 
       lockBtn.addEventListener('click', () => {
-        editing = false; cy.autoungrabify(true); status.textContent = 'Locked';
+        editing = false;
+        cy.autoungrabify(true);
+        const el = document.getElementById('statusBadge');
+        if (el) el.textContent = 'Locked';
       });
+
       unlockBtn.addEventListener('click', () => {
-        editing = true; cy.autoungrabify(false); status.textContent = 'Unlocked (drag to move)';
+        editing = true;
+        cy.autoungrabify(false);
+        const el = document.getElementById('statusBadge');
+        if (el) el.textContent = 'Unlocked (drag to move)';
       });
 
-async function saveNow() {
-  try {
-    const body = collectPositions(cy);
-    console.log('[Topology] saveNow ->', body);
+      async function saveNow() {
+        try {
+          const body = collectPositions(cy);
+          console.log('[Topology] saveNow ->', body);
+          const statusEl = document.getElementById('statusBadge');
+          if (statusEl) statusEl.textContent = 'Saving...';
+          const res = await postJSON('/topology/layout', body);
+          console.log('[Topology] saveNow response ->', res);
+          if (statusEl) statusEl.textContent = 'Saved ✔';
+        } catch (e) {
+          console.error('[Topology] saveNow error:', e);
+          const statusEl = document.getElementById('statusBadge');
+          if (statusEl) statusEl.textContent = 'Save failed ✖';
+        }
+      }
 
-    // Fetch status element dynamically to ensure it's always available
-    const statusEl = document.getElementById('statusBadge');
-    if (statusEl) statusEl.textContent = 'Saving...';
-
-    const res = await postJSON('/topology/layout', body);
-
-    if (statusEl) statusEl.textContent = 'Saved ✔';
-    console.log('[Topology] saveNow response ->', res);
-  } catch (e) {
-    console.error('[Topology] saveNow error:', e);
-    const statusEl = document.getElementById('statusBadge');
-    if (statusEl) statusEl.textContent = 'Save failed ✖';
-  }
-}
-
-      // expose for console testing
+      // Expose for console testing
       window.savePositions = saveNow;
       window.cyRef = cy;
 
@@ -236,7 +238,7 @@ async function saveNow() {
         ]);
       });
 
-      // Optional live updates via WebSocket (backend /ws/topology can be added later)
+      // Optional live updates (future websocket)
       openTopologySocket(async (msg) => {
         if (msg?.event === 'update_topology') {
           legend.textContent = 'Updating topology...';
