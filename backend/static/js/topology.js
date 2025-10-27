@@ -191,18 +191,26 @@
         editing = true; cy.autoungrabify(false); status.textContent = 'Unlocked (drag to move)';
       });
 
-      async function saveNow() {
-        try {
-          const body = collectPositions(cy);
-          console.log('[Topology] saveNow ->', body);
-          status.textContent = 'Saving...';
-          await postJSON('/topology/layout', body);
-          status.textContent = 'Saved ✔';
-        } catch (e) {
-          console.error('[Topology] saveNow error:', e);
-          status.textContent = 'Save failed ✖';
-        }
-      }
+async function saveNow() {
+  try {
+    const body = collectPositions(cy);
+    console.log('[Topology] saveNow ->', body);
+
+    // Fetch status element dynamically to ensure it's always available
+    const statusEl = document.getElementById('statusBadge');
+    if (statusEl) statusEl.textContent = 'Saving...';
+
+    const res = await postJSON('/topology/layout', body);
+
+    if (statusEl) statusEl.textContent = 'Saved ✔';
+    console.log('[Topology] saveNow response ->', res);
+  } catch (e) {
+    console.error('[Topology] saveNow error:', e);
+    const statusEl = document.getElementById('statusBadge');
+    if (statusEl) statusEl.textContent = 'Save failed ✖';
+  }
+}
+
       // expose for console testing
       window.savePositions = saveNow;
       window.cyRef = cy;
