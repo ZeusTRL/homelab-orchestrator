@@ -15,7 +15,7 @@ from .api import topology, configsync, jobs
 from fastapi.staticfiles import StaticFiles
 from .models.topology_layout import TopologyLayout  # noqa: F401
 from .api import topology_layout
-
+from .ws import router as ws_router
 
 
 app = FastAPI(title="Homelab Orchestrator (MVP)", version="0.1.0")
@@ -46,3 +46,4 @@ app.include_router(configsync.router)
 app.include_router(jobs.router)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(topology_layout.router)
+app.include_router(ws_router)
