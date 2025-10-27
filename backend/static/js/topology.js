@@ -42,18 +42,19 @@
     })) };
   }
 
-  function applySavedPositions(cy, map) {
-    const pts = map.points || {};
-    let applied = 0;
-    Object.entries(pts).forEach(([id, pos]) => {
-      const node = cy.$id(String(id));
-      if (node.nonempty()) {
-        node.position({ x: pos.x, y: pos.y });
-        applied++;
-      }
-    });
-    return applied;
-  }
+function applySavedPositions(cy, map) {
+  const pts = map.points || {};
+  let applied = 0;
+  Object.entries(pts).forEach(([id, pos]) => {
+    const node = cy.$id(String(id));
+    if (node.length > 0) {
+      node.position({ x: pos.x, y: pos.y });
+      applied++;
+    }
+  });
+  return applied;
+}
+
 
   function makeSidebar() {
     const side = document.createElement('aside');
