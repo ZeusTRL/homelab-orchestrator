@@ -1,12 +1,13 @@
-/* global cytoscape, cyMinimap, cyPanzoom */
+/* global cytoscape */
 (function(){
-  // registers (global plugins come from CDN)
-  if (cytoscape && cytoscape('core', 'panzoom') == null) {
-    cytoscape.use(window.cytoscapePanzoom);
+  // Register plugins ONLY if they’re functions (prevents undefined.apply errors)
+  if (typeof window.cytoscapePanzoom === 'function') {
+    try { cytoscape.use(window.cytoscapePanzoom); } catch (e) {}
   }
-  if (cytoscape && cytoscape('core', 'minimap') == null) {
-    cytoscape.use(window.cytoscapeMinimap);
+  if (typeof window.cytoscapeMinimap === 'function') {
+    try { cytoscape.use(window.cytoscapeMinimap); } catch (e) {}
   }
+
 
   const { getJSON, postJSON, openTopologySocket, API_BASE } = window.AppHelpers;
 
