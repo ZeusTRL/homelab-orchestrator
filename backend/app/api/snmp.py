@@ -67,7 +67,7 @@ def _infer_vendor_from_descr(descr: str) -> Optional[str]:
 async def snmp_poll(
     req: SnmpPollRequest = Body(...),
     db: Session = Depends(get_db),
-    background_tasks: BackgroundTasks = None,  # injected by FastAPI
+    background_tasks: BackgroundTasks  # injected by FastAPI
 ):
     host = req.host
     community = req.community

@@ -100,7 +100,7 @@ async def scan_get(
     profile: ScanProfile = Query("standard"),
     skip_ping: bool = Query(False, description="If true, do a no-ping scan"),
     db: Session = Depends(get_db),
-    background_tasks: BackgroundTasks = None,  # injected by FastAPI
+    background_tasks: BackgroundTasks  # injected by FastAPI
 ):
     target_list = _normalize_targets_param(targets)
     ips = await _run_scan_and_persist(target_list, profile, skip_ping, db)
@@ -113,7 +113,7 @@ async def scan_get(
 async def scan_post(
     req: ScanRequest = Body(...),
     db: Session = Depends(get_db),
-    background_tasks: BackgroundTasks = None,  # injected by FastAPI
+    background_tasks: BackgroundTasks  # injected by FastAPI
 ):
     ips = await _run_scan_and_persist(req.targets, req.profile, req.skip_ping, db)
     if ips:
