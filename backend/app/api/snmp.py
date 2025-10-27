@@ -65,9 +65,10 @@ def _infer_vendor_from_descr(descr: str) -> Optional[str]:
 # ---------------------------
 @router.post("/poll", response_model=SnmpPollResponse)
 async def snmp_poll(
+    background_tasks: BackgroundTasks,
     req: SnmpPollRequest = Body(...),
     db: Session = Depends(get_db),
-    background_tasks: BackgroundTasks  # injected by FastAPI
+     # injected by FastAPI
 ):
     host = req.host
     community = req.community
