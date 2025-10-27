@@ -51,7 +51,6 @@ class ScanResponse(BaseModel):
 def _normalize_targets_param(targets_param: str | None) -> List[str]:
     if not targets_param:
         return []
-    # allow comma/space separated
     raw = [t.strip() for t in targets_param.replace(",", " ").split()]
     return [t for t in raw if t]
 
@@ -63,11 +62,10 @@ async def _run_scan_and_persist(
     db: Session,
 ) -> List[str]:
     """
-    Run scan (in a worker thread) and upsert 'up' hosts into Devices, updating last_seen.
-    services.scanner.scan_targets should return a list[str] (IPs) or list[dict] with an 'ip' key.
+    Run scan (thread off main loop) and upsert 'up' hosts into Devices, updating last_seen.
+    services.scanner.scan_targets may return list[str] or list[dict] with an 'ip' key.
     """
     results = await asyncio.to_thread(scanner.scan_targets, targets, profile, skip_ping)
-
     if not results:
         return []
 
@@ -102,11 +100,11 @@ async def scan_get(
     profile: ScanProfile = Query("standard"),
     skip_ping: bool = Query(False, description="If true, do a no-ping scan"),
     db: Session = Depends(get_db),
-    background_tasks: BackgroundTasks | None = None,
+    background_tasks: BackgroundTasks = None,  # injected by FastAPI
 ):
     target_list = _normalize_targets_param(targets)
     ips = await _run_scan_and_persist(target_list, profile, skip_ping, db)
-    if background_tasks is not None and ips:
+    if ips:
         background_tasks.add_task(notify_topology_update_background)
     return ScanResponse(ok=True, count=len(ips), hosts=ips)
 
@@ -115,9 +113,9 @@ async def scan_get(
 async def scan_post(
     req: ScanRequest = Body(...),
     db: Session = Depends(get_db),
-    background_tasks: BackgroundTasks | None = None,
+    background_tasks: BackgroundTasks = None,  # injected by FastAPI
 ):
     ips = await _run_scan_and_persist(req.targets, req.profile, req.skip_ping, db)
-    if background_tasks is not None and ips:
+    if ips:
         background_tasks.add_task(notify_topology_update_background)
     return ScanResponse(ok=True, count=len(ips), hosts=ips)

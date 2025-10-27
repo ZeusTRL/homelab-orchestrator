@@ -67,7 +67,7 @@ def _infer_vendor_from_descr(descr: str) -> Optional[str]:
 async def snmp_poll(
     req: SnmpPollRequest = Body(...),
     db: Session = Depends(get_db),
-    background_tasks: BackgroundTasks | None = None,
+    background_tasks: BackgroundTasks = None,  # injected by FastAPI
 ):
     host = req.host
     community = req.community
@@ -105,8 +105,7 @@ async def snmp_poll(
             admin_up=bool(row.get("admin_up")),
             oper_up=bool(row.get("oper_up")),
             speed=row.get("speed"),
-            # If you added 'desc' column in Interface model, you can also:
-            # desc=row.get("desc"),
+            # desc=row.get("desc"),  # if you added this column
         ))
 
     # LLDP neighbors: wipe & repopulate (simple approach)
@@ -124,8 +123,7 @@ async def snmp_poll(
     db.commit()
 
     # Notify clients to refresh topology (non-blocking)
-    if background_tasks is not None:
-        background_tasks.add_task(notify_topology_update_background)
+    background_tasks.add_task(notify_topology_update_background)
 
     return SnmpPollResponse(
         ok=True,
