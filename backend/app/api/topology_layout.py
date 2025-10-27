@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from ..db import SessionLocal
 from ..models.device import Device
 from ..models.topology_layout import TopologyLayout
-from ..schemas.layout import LayoutPoint, LayoutSetRequest, LayoutGetResponse
+from ..schemas.layout import LayoutSetRequest, LayoutGetResponse
 
 router = APIRouter(prefix="/topology/layout", tags=["topology"])
 
@@ -18,20 +18,19 @@ def get_db():
 @router.get("/", response_model=LayoutGetResponse)
 def get_layout(db: Session = Depends(get_db)):
     rows = db.query(TopologyLayout).all()
-    return {
-        "points": {r.device_id: {"x": float(r.pos_x), "y": float(r.pos_y)} for r in rows}
-    }
+    return {"points": {r.device_id: {"x": float(r.pos_x), "y": float(r.pos_y)} for r in rows}}
 
 @router.post("/", response_model=LayoutGetResponse)
 def set_layout(payload: LayoutSetRequest = Body(...), db: Session = Depends(get_db)):
-    # Optional: validate devices exist (skip if you want max-flexibility)
     device_ids = [p.device_id for p in payload.points]
-    existing = {d.id for d in db.query(Device.id).filter(Device.id.in__(device_ids))}
-    missing = set(device_ids) - existing
+
+    # ✅ use in_ (not in__) and extract scalar ints correctly
+    existing_ids = {row[0] for row in db.query(Device.id).filter(Device.id.in_(device_ids)).all()}
+    missing = set(device_ids) - existing_ids
     if missing:
         raise HTTPException(status_code=400, detail=f"Unknown device_id(s): {sorted(missing)}")
 
-    # Upsert each point
+    # Upsert
     by_id = {p.device_id: p for p in payload.points}
     rows = db.query(TopologyLayout).filter(TopologyLayout.device_id.in_(device_ids)).all()
     seen = set()
@@ -48,11 +47,8 @@ def set_layout(payload: LayoutSetRequest = Body(...), db: Session = Depends(get_
 
     db.commit()
 
-    # Return full map after save
     all_rows = db.query(TopologyLayout).all()
-    return {
-        "points": {r.device_id: {"x": float(r.pos_x), "y": float(r.pos_y)} for r in all_rows}
-    }
+    return {"points": {r.device_id: {"x": float(r.pos_x), "y": float(r.pos_y)} for r in all_rows}}
 
 @router.delete("/", response_model=LayoutGetResponse)
 def clear_layout(device_id: int | None = Query(None), db: Session = Depends(get_db)):
@@ -61,7 +57,5 @@ def clear_layout(device_id: int | None = Query(None), db: Session = Depends(get_
     else:
         db.query(TopologyLayout).filter(TopologyLayout.device_id == device_id).delete(synchronize_session=False)
     db.commit()
-    return {"points": {} if device_id is None else {
-        r.device_id: {"x": float(r.pos_x), "y": float(r.pos_y)}
-        for r in db.query(TopologyLayout).all()
-    }}
+    rows = db.query(TopologyLayout).all()
+    return {"points": {r.device_id: {"x": float(r.pos_x), "y": float(r.pos_y)} for r in rows}}
