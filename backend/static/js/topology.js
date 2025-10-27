@@ -37,11 +37,14 @@
   async function fetchLayout()   { return getJSON('/topology/layout'); }
 
   function collectPositions(cy) {
-    return { points: cy.nodes().map(n => ({
-      device_id: Number(n.id()),
-      x: n.position('x'),
-      y: n.position('y')
-    })) };
+    const points = [];
+    cy.nodes().forEach(n => {
+      const idNum = Number(n.id());
+      if (Number.isFinite(idNum) && idNum > 0) {
+        points.push({ device_id: idNum, x: n.position('x'), y: n.position('y') });
+      }
+    });
+    return { points };
   }
 
   function applySavedPositions(cy, map) {
